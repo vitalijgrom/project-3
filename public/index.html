@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ru" data-theme="">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Мониторинг доступности — сайты и почтовые узлы</title>
+<meta name="description" content="Дашборды доступности сайтов и почтовых узлов: текущее состояние, надёжность за период, причины отказов и журнал проверок. Данные — из Google Таблицы.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛰️</text></svg>">
+<link rel="preconnect" href="/">
+<link rel="stylesheet" href="assets/styles.css">
+<script>
+  // Тема применяется до первой отрисовки, чтобы не было вспышки светлого фона.
+  try {
+    var saved = localStorage.getItem('uptime-dashboard-theme');
+    if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+  } catch (e) {}
+</script>
+</head>
+<body class="viz-root">
+
+<a class="skip-link" href="#content">Перейти к содержимому</a>
+
+<header class="topbar">
+  <div class="topbar__title">
+    <h1>Мониторинг доступности</h1>
+    <p class="topbar__sub">Сайты и почтовые узлы: состояние сейчас и надёжность за весь период наблюдения</p>
+  </div>
+  <div class="topbar__actions">
+    <span class="status" id="status" role="status" aria-live="polite">Загрузка данных…</span>
+    <button class="btn" id="refresh" type="button" title="Обновить данные из Google Таблицы">
+      <span aria-hidden="true">⟳</span> Обновить
+    </button>
+    <button class="btn btn--icon" id="theme" type="button" aria-label="Переключить тему">
+      <span aria-hidden="true">◐</span>
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden></div>
+
+<main id="content">
+
+  <!-- Сводка по обоим контурам: видна всегда, независимо от выбранной вкладки. -->
+  <section class="health" id="health" aria-label="Сводка по контурам"></section>
+
+  <!-- Вкладки: каждый контур — отдельный дашборд с общей вёрсткой. -->
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Контур мониторинга"></nav>
+
+  <!-- Фильтры пересчитывают всё, что построено по узлам: KPI, состояние,
+       надёжность, причины, задержки, SSL и таблицу. -->
+  <section class="filters" aria-label="Фильтры по узлам">
+    <label class="field field--search">
+      <span class="field__label">Поиск</span>
+      <input type="search" id="f-search" placeholder="Адрес, ошибка или SSL" autocomplete="off">
+    </label>
+    <label class="field">
+      <span class="field__label">Состояние</span>
+      <select id="f-state">
+        <option value="">Любое</option>
+        <option value="online">Доступен</option>
+        <option value="offline">Недоступен</option>
+      </select>
+    </label>
+    <label class="field">
+      <span class="field__label">SSL</span>
+      <select id="f-ssl"><option value="">Любой</option></select>
+    </label>
+    <label class="field">
+      <span class="field__label">Причина отказов</span>
+      <select id="f-reason"><option value="">Любая</option></select>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="f-problem">
+      <span>Только помеченные проблемными</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="f-fails">
+      <span>Только со сбоями в журнале</span>
+    </label>
+    <button class="btn btn--ghost" id="reset" type="button">Сбросить</button>
+  </section>
+
+  <section class="kpis" aria-label="Ключевые показатели">
+    <article class="card kpi kpi--hero">
+      <p class="kpi__label">Доступность за период</p>
+      <p class="kpi__value kpi__value--hero" id="kpi-uptime">—</p>
+      <p class="kpi__hint" id="kpi-uptime-hint">доля удачных проверок в журнале</p>
+    </article>
+    <article class="card kpi">
+      <p class="kpi__label">Под наблюдением</p>
+      <p class="kpi__value" id="kpi-hosts">—</p>
+      <p class="kpi__hint" id="kpi-hosts-hint">&nbsp;</p>
+    </article>
+    <article class="card kpi">
+      <p class="kpi__label">Недоступны сейчас</p>
+      <p class="kpi__value" id="kpi-offline">—</p>
+      <p class="kpi__hint" id="kpi-offline-hint">&nbsp;</p>
+    </article>
+    <article class="card kpi">
+      <p class="kpi__label">Медианная задержка</p>
+      <p class="kpi__value" id="kpi-latency">—</p>
+      <p class="kpi__hint" id="kpi-latency-hint">&nbsp;</p>
+    </article>
+    <article class="card kpi">
+      <p class="kpi__label">Сбоев в журнале</p>
+      <p class="kpi__value" id="kpi-fails">—</p>
+      <p class="kpi__hint" id="kpi-fails-hint">&nbsp;</p>
+    </article>
+  </section>
+
+  <section class="grid">
+    <article class="card chart card--wide" id="card-board">
+      <header class="card__head">
+        <h2>Состояние узлов сейчас</h2>
+        <p class="card__sub" id="board-sub">По последней записи листа статуса</p>
+      </header>
+      <div class="chart__body" id="chart-board"></div>
+      <footer class="legend legend--inline" id="board-legend"></footer>
+    </article>
+
+    <article class="card chart" id="card-reliability">
+      <header class="card__head">
+        <h2>Надёжность узлов</h2>
+        <p class="card__sub">Доля неудачных проверок за весь период, худшие сверху</p>
+      </header>
+      <div class="chart__body" id="chart-reliability"></div>
+    </article>
+
+    <article class="card chart" id="card-reasons">
+      <header class="card__head">
+        <h2>Причины недоступности</h2>
+        <p class="card__sub">Квоты Apps Script — отказ мониторинга, а не узла</p>
+      </header>
+      <div class="chart__body" id="chart-reasons"></div>
+    </article>
+
+    <article class="card chart" id="card-latency">
+      <header class="card__head">
+        <h2>Задержка ответа</h2>
+        <p class="card__sub">Распределение по доступным сейчас узлам</p>
+      </header>
+      <div class="chart__body" id="chart-latency"></div>
+    </article>
+
+    <article class="card chart" id="card-ssl">
+      <header class="card__head">
+        <h2>Состояние SSL</h2>
+        <p class="card__sub">Что вернула проверка сертификата</p>
+      </header>
+      <div class="chart__body" id="chart-ssl"></div>
+    </article>
+
+    <article class="card chart card--wide" id="card-timeline">
+      <header class="card__head">
+        <h2>Доступность по дням</h2>
+        <p class="card__sub" id="timeline-sub">Журнал агрегирован по контуру целиком — фильтры по узлам здесь не применяются</p>
+      </header>
+      <div class="chart__body chart__body--scroll" id="chart-timeline"></div>
+      <footer class="legend legend--inline" id="timeline-legend"></footer>
+    </article>
+
+    <article class="card chart card--wide" id="card-heat">
+      <header class="card__head">
+        <h2>Календарь отказов: день × час</h2>
+        <p class="card__sub">Насыщенность клетки — доля неудачных проверок в этот час</p>
+      </header>
+      <div class="chart__body chart__body--scroll" id="chart-heat"></div>
+      <footer class="legend legend--scale" id="heat-legend"></footer>
+    </article>
+
+    <article class="card chart card--wide" id="card-events">
+      <header class="card__head">
+        <h2>Активность мониторинга</h2>
+        <p class="card__sub">Записи журнала по типам событий за весь период</p>
+      </header>
+      <div class="chart__body" id="chart-events"></div>
+      <footer class="legend legend--inline" id="events-legend"></footer>
+    </article>
+  </section>
+
+  <section class="card card--wide table-card">
+    <header class="card__head card__head--row">
+      <div>
+        <h2>Все узлы</h2>
+        <p class="card__sub" id="table-sub">&nbsp;</p>
+      </div>
+      <button class="btn btn--ghost" id="export" type="button">Скачать CSV</button>
+    </header>
+    <div class="table-wrap">
+      <table class="data-table" id="table">
+        <thead>
+          <tr>
+            <th scope="col" data-sort="host">Узел</th>
+            <th scope="col" data-sort="state">Сейчас</th>
+            <th scope="col" data-sort="ssl">SSL</th>
+            <th scope="col" class="num" data-sort="latency">Задержка</th>
+            <th scope="col" class="num" data-sort="failRate" aria-sort="descending">Сбоев</th>
+            <th scope="col" data-sort="reasonLabel">Основная причина</th>
+            <th scope="col" data-sort="checkedAt">Проверен</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer class="pagefoot">
+  <p>Источник данных — Google Таблица, запрашивается через Cloudflare-прослойку <code>/api/monitor</code>.</p>
+  <p id="foot-meta"></p>
+</footer>
+
+<div class="tooltip" id="tooltip" role="tooltip" aria-hidden="true"></div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>

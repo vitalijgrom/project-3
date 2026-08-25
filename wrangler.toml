@@ -1,0 +1,10 @@
+name = "uptime-monitoring-dashboard"
+compatibility_date = "2025-07-18"
+pages_build_output_dir = "public"
+
+# ID таблицы держим на сервере: в браузер он не попадает — дашборды ходят
+# только в /api/monitor. В проде эти же значения удобнее задать в
+# Cloudflare Pages → Settings → Variables and Secrets.
+[vars]
+SHEET_ID = "1QgzU7AnrH6Cu-KWdeio2u4kJadfqhfQJZ04iOM3uMWE"
+CACHE_TTL = "300"
